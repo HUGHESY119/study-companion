@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { 
   BookOpen, Sparkles, Plus, BarChart3, Trash2, Play, CheckSquare, 
   Layers, Download, Upload, Flame, FolderPlus, ArrowRight, 
-  GraduationCap, ListFilter, AlertCircle, RefreshCw, Eye, MessageSquare, FileText, Shield
+  GraduationCap, ListFilter, AlertCircle, RefreshCw, Eye, MessageSquare, FileText, Shield, User
 } from "lucide-react";
 import { Deck, Flashcard, UserStats, StudySession } from "./types";
 import { TEMPLATE_DECKS } from "./data/templates";
@@ -28,7 +28,7 @@ export default function App() {
   const { user, loadingUser, isBanned, decks, notes, stats, updateDecks, updateStats, deleteDeck, addNote, deleteNote } = useFirebaseData();
 
   // Navigation states
-  const [activeTab, setActiveTab] = useState<"library" | "ai-builder" | "manual-builder" | "analytics" | "tutor" | "notes" | "admin">("library");
+  const [activeTab, setActiveTab] = useState<"library" | "ai-builder" | "manual-builder" | "analytics" | "tutor" | "notes" | "admin" | "account">("library");
   const [tutorDeckId, setTutorDeckId] = useState<string | null>(null);
   
   // Session states
@@ -417,7 +417,7 @@ export default function App() {
       {sessionMode === "idle" && (
         <div className="border-b border-slate-100 bg-white/70 backdrop-blur-md sticky top-[73px] z-30 px-4 md:px-8">
           <nav className="max-w-7xl mx-auto flex gap-6 overflow-x-auto scrollbar-none py-1">
-            {([...(["library", "notes", "ai-builder", "manual-builder", "analytics", "tutor"] as const), ...(user.email === 'admin@study.app' ? ["admin" as const] : [])]).map((tab) => {
+            {([...(["library", "notes", "ai-builder", "manual-builder", "analytics", "tutor", "account"] as const), ...(user.email === 'admin@study.app' ? ["admin" as const] : [])]).map((tab) => {
               let label = "Study Library";
               let icon = <BookOpen className="w-4 h-4" />;
               
@@ -439,6 +439,9 @@ export default function App() {
               } else if (tab === "admin") {
                 label = "Admin";
                 icon = <Shield className="w-4 h-4 text-red-500" />;
+              } else if (tab === "account") {
+                label = "Account";
+                icon = <User className="w-4 h-4 text-slate-500" />;
               }
 
               return (
@@ -655,6 +658,36 @@ export default function App() {
                   notes={notes}
                   onDeleteNote={deleteNote}
                 />
+              )}
+
+              {/* ACCOUNT SETTINGS VIEW */}
+              {activeTab === "account" && (
+                <div className="max-w-2xl mx-auto space-y-6">
+                  <div className="bg-white border border-slate-100 rounded-2xl p-8 shadow-xs">
+                    <div className="flex items-center gap-4 mb-8">
+                      <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
+                        <User className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold font-display text-slate-900">{user.displayName || "Study User"}</h2>
+                        <p className="text-slate-500">{user.email}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="border-t border-slate-100 pt-8">
+                      <h3 className="text-sm font-bold text-slate-900 mb-4 uppercase tracking-wider">Account Actions</h3>
+                      <button
+                        onClick={() => {
+                          auth.signOut();
+                          setActiveTab("library");
+                        }}
+                        className="py-3 px-6 bg-slate-950 hover:bg-slate-900 text-white font-medium rounded-xl text-sm flex items-center justify-center w-full sm:w-auto transition-all"
+                      >
+                        Sign Out / Switch Account
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* TAB 2: AI BUILDER COMPONENT */}
