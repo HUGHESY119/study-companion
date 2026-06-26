@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Sparkles, ArrowRight, Loader2, BookOpen, Layers, CheckCircle2, AlertCircle, Upload, FileText, X } from "lucide-react";
+import { Sparkles, ArrowRight, Loader2, BookOpen, Layers, CheckCircle2, AlertCircle, Upload, FileText, X, Bookmark } from "lucide-react";
+import Markdown from "react-markdown";
 import { Deck } from "../types";
 
 interface AIGeneratorProps {
   onDeckGenerated: (name: string, description: string, cards: any[]) => void;
   existingDecks: Deck[];
   onAddCardsToDeck: (deckId: string, cards: any[]) => void;
+  onSaveNotes?: (title: string, content: string) => void;
 }
 
 const PRESETS = [
@@ -24,15 +26,17 @@ const LOADING_STEPS = [
   "Finalizing flashcard deck structures..."
 ];
 
-export default function AIGenerator({ onDeckGenerated, existingDecks, onAddCardsToDeck }: AIGeneratorProps) {
+export default function AIGenerator({ onDeckGenerated, existingDecks, onAddCardsToDeck, onSaveNotes }: AIGeneratorProps) {
   const [topic, setTopic] = useState("");
   const [textContent, setTextContent] = useState("");
   const [cardCount, setCardCount] = useState(10);
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [notesFormat, setNotesFormat] = useState<"detailed" | "bullet_points">("detailed");
   
   // Destination
-  const [targetMode, setTargetMode] = useState<"new" | "existing">("new");
+  const [targetMode, setTargetMode] = useState<"new" | "existing" | "notes" | "references">("new");
   const [selectedDeckId, setSelectedDeckId] = useState("");
+  const [generatedNotes, setGeneratedNotes] = useState("");
 
   // Loading state
   const [loading, setLoading] = useState(false);
@@ -145,6 +149,24 @@ export default function AIGenerator({ onDeckGenerated, existingDecks, onAddCards
     setLoadingStep(0);
 
     try {
+      if (targetMode === "notes" || targetMode === "references") {
+        const endpoint = targetMode === "notes" ? "/api/generate-notes" : "/api/generate-references";
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            topic: topic.trim(),
+            textContent: textContent.trim(),
+            format: notesFormat,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || `Failed to generate ${targetMode}.`);
+        setGeneratedNotes(data.notes || data.references);
+        return;
+      }
+
       const response = await fetch("/api/generate-flashcards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -221,7 +243,7 @@ export default function AIGenerator({ onDeckGenerated, existingDecks, onAddCards
 
         <form onSubmit={handleGenerate} className="space-y-6">
           {/* Target Selection */}
-          <div className="grid grid-cols-2 gap-3 p-1 bg-slate-50 rounded-2xl border border-slate-100/50">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-1 bg-slate-50 rounded-2xl border border-slate-100/50">
             <button
               type="button"
               onClick={() => setTargetMode("new")}
@@ -233,7 +255,7 @@ export default function AIGenerator({ onDeckGenerated, existingDecks, onAddCards
             >
               <span className="flex items-center justify-center gap-2">
                 <BookOpen className="w-4 h-4" />
-                Create New Deck
+                New Deck
               </span>
             </button>
             <button
@@ -252,7 +274,35 @@ export default function AIGenerator({ onDeckGenerated, existingDecks, onAddCards
             >
               <span className="flex items-center justify-center gap-2">
                 <Layers className="w-4 h-4" />
-                Add to Existing Deck
+                Existing Deck
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTargetMode("notes")}
+              className={`py-3 px-4 rounded-xl text-sm font-medium transition-all ${
+                targetMode === "notes"
+                  ? "bg-white text-slate-900 shadow-sm font-semibold"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <span className="flex items-center justify-center gap-2">
+                <FileText className="w-4 h-4" />
+                Make Notes
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTargetMode("references")}
+              className={`py-3 px-4 rounded-xl text-sm font-medium transition-all ${
+                targetMode === "references"
+                  ? "bg-white text-slate-900 shadow-sm font-semibold"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <span className="flex items-center justify-center gap-2">
+                <Bookmark className="w-4 h-4" />
+                References
               </span>
             </button>
           </div>
@@ -428,49 +478,75 @@ export default function AIGenerator({ onDeckGenerated, existingDecks, onAddCards
           )}
 
           {/* Settings Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700 block">
-                Card Quantity: <span className="font-bold text-slate-900">{cardCount}</span>
-              </label>
-              <input
-                type="range"
-                min="5"
-                max="25"
-                step="5"
-                value={cardCount}
-                onChange={(e) => setCardCount(parseInt(e.target.value))}
-                className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-slate-800"
-              />
-              <div className="flex justify-between text-[10px] text-slate-400 font-medium px-1">
-                <span>5 cards</span>
-                <span>15 cards</span>
-                <span>25 cards</span>
+          {(targetMode === "new" || targetMode === "existing") && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 block">
+                  Card Quantity: <span className="font-bold text-slate-900">{cardCount}</span>
+                </label>
+                <input
+                  type="range"
+                  min="5"
+                  max="25"
+                  step="5"
+                  value={cardCount}
+                  onChange={(e) => setCardCount(parseInt(e.target.value))}
+                  className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-slate-800"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 font-medium px-1">
+                  <span>5 cards</span>
+                  <span>15 cards</span>
+                  <span>25 cards</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 block">
+                  Academic Rigor / Difficulty
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["easy", "medium", "hard"] as const).map((lvl) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => setDifficulty(lvl)}
+                      className={`py-2 px-3 border rounded-xl text-xs font-semibold capitalize transition-all ${
+                        difficulty === lvl
+                          ? "bg-slate-950 text-white border-slate-950 shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      {lvl}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
+          )}
 
-            <div className="space-y-2">
+          {targetMode === "notes" && (
+            <div className="space-y-3 pt-2 border-t border-slate-100 animate-fadeIn">
               <label className="text-sm font-medium text-slate-700 block">
-                Academic Rigor / Difficulty
+                Notes Format
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(["easy", "medium", "hard"] as const).map((lvl) => (
+              <div className="grid grid-cols-2 gap-3 max-w-sm">
+                {(["detailed", "bullet_points"] as const).map((fmt) => (
                   <button
-                    key={lvl}
+                    key={fmt}
                     type="button"
-                    onClick={() => setDifficulty(lvl)}
-                    className={`py-2 px-3 border rounded-xl text-xs font-semibold capitalize transition-all ${
-                      difficulty === lvl
+                    onClick={() => setNotesFormat(fmt)}
+                    className={`py-2 px-3 border rounded-xl text-sm font-semibold transition-all ${
+                      notesFormat === fmt
                         ? "bg-slate-950 text-white border-slate-950 shadow-sm"
                         : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
                     }`}
                   >
-                    {lvl}
+                    {fmt === "detailed" ? "Detailed & Wordy" : "Bullet Points"}
                   </button>
                 ))}
               </div>
             </div>
-          </div>
+          )}
 
           {/* Action Trigger */}
           <div className="pt-4">
@@ -503,13 +579,47 @@ export default function AIGenerator({ onDeckGenerated, existingDecks, onAddCards
                 disabled={targetMode === "existing" && existingDecks.length === 0}
                 className="w-full py-4 px-6 bg-slate-950 hover:bg-slate-900 disabled:opacity-50 text-white font-medium rounded-2xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm hover:shadow-md"
               >
-                <span>Generate Smart Flashcards</span>
+                <span>Generate Smart {targetMode === "notes" ? "Notes" : targetMode === "references" ? "Bibliography" : "Flashcards"}</span>
                 <Sparkles className="w-4 h-4 text-amber-400" />
                 <ArrowRight className="w-4 h-4 ml-1" />
               </button>
             )}
           </div>
         </form>
+
+        {generatedNotes && (targetMode === "notes" || targetMode === "references") && (
+          <div className="mt-8 p-6 bg-slate-50 border border-slate-200 rounded-3xl animate-fadeIn">
+            <h3 className="text-xl font-bold mb-4 font-display text-slate-900 flex items-center gap-2">
+              {targetMode === "references" ? <Bookmark className="w-5 h-5 text-indigo-500" /> : <FileText className="w-5 h-5 text-indigo-500" />}
+              {targetMode === "references" ? "Your Bibliography" : "Your AI Study Notes"}
+            </h3>
+            <div className="markdown-body text-slate-700 text-sm leading-relaxed">
+              <Markdown>{generatedNotes}</Markdown>
+            </div>
+            <div className="flex items-center gap-3 mt-6">
+              {onSaveNotes && (
+                <button 
+                  onClick={() => {
+                    const noteTitle = topic.trim() || uploadedFileName || (targetMode === "references" ? "Bibliography" : "AI Generated Notes");
+                    onSaveNotes(noteTitle, generatedNotes);
+                    setGeneratedNotes("");
+                    setTopic("");
+                    setTextContent("");
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-xs transition-colors"
+                >
+                  Save to Notes
+                </button>
+              )}
+              <button 
+                onClick={() => setGeneratedNotes("")}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl font-semibold text-xs transition-colors"
+              >
+                Clear Notes
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

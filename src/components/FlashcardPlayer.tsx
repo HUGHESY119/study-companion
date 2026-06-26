@@ -5,6 +5,7 @@ import {
   CheckCircle, RefreshCw, XCircle, VolumeX, Eye
 } from "lucide-react";
 import { Flashcard, Deck } from "../types";
+import { Timer } from "./Timer";
 
 interface FlashcardPlayerProps {
   deck: Deck;
@@ -17,8 +18,56 @@ export default function FlashcardPlayer({ deck, onClose, onCardReviewed }: Flash
   const [flipped, setFlipped] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [srsMode, setSrsMode] = useState(false);
+  const [shuffleMode, setShuffleMode] = useState(false);
+  const [reverseMode, setReverseMode] = useState(false);
+  const [shuffledIndices, setShuffledIndices] = useState<number[]>([]);
 
-  const card = deck.cards[currentIndex];
+  // Effect to rebuild shuffled indices when shuffleMode is toggled
+  useEffect(() => {
+    if (shuffleMode) {
+      const indices = Array.from({ length: deck.cards.length }, (_, i) => i);
+      setShuffledIndices(indices.sort(() => Math.random() - 0.5));
+    } else {
+      setShuffledIndices([]);
+    }
+  }, [shuffleMode, deck.cards.length]);
+
+  // Compute active deck cards based on modes
+  const activeCards = React.useMemo(() => {
+    if (srsMode) {
+      // SRS Mode: Prioritize unmastered cards, and cards not reviewed recently
+      return [...deck.cards].sort((a, b) => {
+        // Unmastered cards go first
+        if (a.mastered !== b.mastered) return a.mastered ? 1 : -1;
+        
+        // If both have same mastery, sort by review count (fewer reviews first)
+        if (a.reviewCount !== b.reviewCount) return a.reviewCount - b.reviewCount;
+        
+        // Fallback: older lastReviewedAt goes first
+        if (a.lastReviewedAt && b.lastReviewedAt) {
+          return new Date(a.lastReviewedAt).getTime() - new Date(b.lastReviewedAt).getTime();
+        }
+        return 0;
+      });
+    }
+    
+    if (shuffleMode && shuffledIndices.length === deck.cards.length) {
+      return shuffledIndices.map(i => deck.cards[i]);
+    }
+    
+    return deck.cards;
+  }, [deck.cards, srsMode, shuffleMode, shuffledIndices]);
+
+  // Ensure index is valid when switching modes
+  useEffect(() => {
+    setCurrentIndex(0);
+  }, [srsMode, shuffleMode, reverseMode]);
+
+  const card = activeCards[currentIndex];
+
+  const currentFront = reverseMode ? card?.back : card?.front;
+  const currentBack = reverseMode ? card?.front : card?.back;
 
   // Auto-unflip when card changes
   useEffect(() => {
@@ -46,10 +95,10 @@ export default function FlashcardPlayer({ deck, onClose, onCardReviewed }: Flash
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [currentIndex, flipped, deck.cards.length]);
+  }, [currentIndex, flipped, activeCards.length]);
 
   const handleNext = () => {
-    if (currentIndex < deck.cards.length - 1) {
+    if (currentIndex < activeCards.length - 1) {
       setCurrentIndex((prev) => prev + 1);
     }
   };
@@ -62,7 +111,7 @@ export default function FlashcardPlayer({ deck, onClose, onCardReviewed }: Flash
 
   const handleScore = (rating: "struggled" | "ok" | "mastered") => {
     onCardReviewed(card.id, rating);
-    if (currentIndex < deck.cards.length - 1) {
+    if (currentIndex < activeCards.length - 1) {
       handleNext();
     } else {
       // Finished deck prompt or wrap up
@@ -80,8 +129,8 @@ export default function FlashcardPlayer({ deck, onClose, onCardReviewed }: Flash
       return;
     }
 
-    const textToSpeak = flipped ? card.back : card.front;
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    const textToSpeak = flipped ? currentBack : currentFront;
+    const utterance = new SpeechSynthesisUtterance(textToSpeak || "");
     
     // Detect standard language patterns
     if (deck.name.toLowerCase().includes("spanish") || card.tags?.some(t => t.toLowerCase().includes("spanish"))) {
@@ -99,9 +148,9 @@ export default function FlashcardPlayer({ deck, onClose, onCardReviewed }: Flash
     window.speechSynthesis.speak(utterance);
   };
 
-  const progressPercentage = ((currentIndex + 1) / deck.cards.length) * 100;
+  const progressPercentage = ((currentIndex + 1) / activeCards.length) * 100;
 
-  if (deck.cards.length === 0) {
+  if (activeCards.length === 0) {
     return (
       <div className="max-w-xl mx-auto text-center py-12 px-4" id="empty-player">
         <p className="text-slate-500 mb-4">This deck does not contain any cards yet.</p>
@@ -115,29 +164,108 @@ export default function FlashcardPlayer({ deck, onClose, onCardReviewed }: Flash
   return (
     <div className="max-w-3xl mx-auto px-4 py-6" id="flashcard-player-session">
       {/* Session Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-6">
+        <div className="flex-1">
           <button
             onClick={onClose}
             className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors uppercase tracking-wider mb-1"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back to Library
           </button>
-          <h2 className="text-lg font-display font-semibold text-slate-900 line-clamp-1">
-            Studying: {deck.name}
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-display font-semibold text-slate-900 line-clamp-1">
+              Studying: {deck.name}
+            </h2>
+            <Timer isActive={true} />
+          </div>
         </div>
 
-        {/* Progress Tracker */}
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-mono font-medium text-slate-500">
-            {currentIndex + 1} of {deck.cards.length}
-          </span>
-          <div className="w-28 bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200/50">
-            <div
-              className="bg-slate-900 h-full transition-all duration-300"
-              style={{ width: `${progressPercentage}%` }}
-            ></div>
+        {/* Controls and Progress Tracker */}
+        <div className="flex flex-col items-end gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-4">
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <span className="text-xs font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">
+                SRS
+              </span>
+              <div
+                className={`relative w-8 h-4 rounded-full transition-colors ${
+                  srsMode ? "bg-slate-900" : "bg-slate-200"
+                }`}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={srsMode} 
+                  onChange={() => {
+                    setSrsMode(!srsMode);
+                    if (!srsMode) setShuffleMode(false);
+                  }}
+                  className="sr-only" 
+                />
+                <div 
+                  className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${
+                    srsMode ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </div>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <span className="text-xs font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">
+                Shuffle
+              </span>
+              <div
+                className={`relative w-8 h-4 rounded-full transition-colors ${
+                  shuffleMode ? "bg-slate-900" : "bg-slate-200"
+                }`}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={shuffleMode} 
+                  onChange={() => {
+                    setShuffleMode(!shuffleMode);
+                    if (!shuffleMode) setSrsMode(false); // Can't SRS and Shuffle
+                  }}
+                  className="sr-only" 
+                />
+                <div 
+                  className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${
+                    shuffleMode ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </div>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <span className="text-xs font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">
+                Reverse
+              </span>
+              <div
+                className={`relative w-8 h-4 rounded-full transition-colors ${
+                  reverseMode ? "bg-slate-900" : "bg-slate-200"
+                }`}
+              >
+                <input 
+                  type="checkbox" 
+                  checked={reverseMode} 
+                  onChange={() => setReverseMode(!reverseMode)}
+                  className="sr-only" 
+                />
+                <div 
+                  className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${
+                    reverseMode ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </div>
+            </label>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-mono font-medium text-slate-500">
+              {currentIndex + 1} of {activeCards.length}
+            </span>
+            <div className="w-28 bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200/50">
+              <div
+                className="bg-slate-900 h-full transition-all duration-300"
+                style={{ width: `${progressPercentage}%` }}
+              ></div>
+            </div>
           </div>
         </div>
       </div>
@@ -189,7 +317,7 @@ export default function FlashcardPlayer({ deck, onClose, onCardReviewed }: Flash
               {/* Front Text */}
               <div className="my-auto text-center px-4">
                 <h3 className="text-xl sm:text-2xl md:text-3xl font-display font-medium text-slate-950 tracking-tight leading-snug">
-                  {card.front}
+                  {currentFront}
                 </h3>
               </div>
 
@@ -227,7 +355,7 @@ export default function FlashcardPlayer({ deck, onClose, onCardReviewed }: Flash
               {/* Back Text */}
               <div className="my-auto overflow-y-auto max-h-48 sm:max-h-60 px-4 text-center custom-scrollbar">
                 <p className="text-base sm:text-lg md:text-xl font-light text-slate-100 leading-relaxed font-sans">
-                  {card.back}
+                  {currentBack}
                 </p>
               </div>
 
@@ -331,7 +459,7 @@ export default function FlashcardPlayer({ deck, onClose, onCardReviewed }: Flash
                 </button>
 
                 <button
-                  disabled={currentIndex === deck.cards.length - 1}
+                  disabled={currentIndex === activeCards.length - 1}
                   onClick={handleNext}
                   className="p-3 disabled:opacity-30 text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1.5 text-xs font-bold"
                 >

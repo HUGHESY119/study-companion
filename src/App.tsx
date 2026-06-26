@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { 
   BookOpen, Sparkles, Plus, BarChart3, Trash2, Play, CheckSquare, 
   Layers, Download, Upload, Flame, FolderPlus, ArrowRight, 
-  GraduationCap, ListFilter, AlertCircle, RefreshCw, Eye, MessageSquare
+  GraduationCap, ListFilter, AlertCircle, RefreshCw, Eye, MessageSquare, FileText, Shield
 } from "lucide-react";
 import { Deck, Flashcard, UserStats, StudySession } from "./types";
 import { TEMPLATE_DECKS } from "./data/templates";
@@ -13,22 +13,22 @@ import ManualCreator from "./components/ManualCreator";
 import QuizView from "./components/QuizView";
 import Analytics from "./components/Analytics";
 import TutorChat from "./components/TutorChat";
+import NotesView from "./components/NotesView";
+
+import AdminView from "./components/AdminView";
+
+import { Auth } from "./components/Auth";
+import { useFirebaseData } from "./hooks/useFirebaseData";
+import { auth } from "./lib/firebase";
 
 import { safeStorage } from "./utils/storage";
 
 export default function App() {
   // Core states
-  const [decks, setDecks] = useState<Deck[]>([]);
-  const [stats, setStats] = useState<UserStats>({
-    streak: 0,
-    lastStudyDate: undefined,
-    totalCardsViewed: 0,
-    totalCardsMastered: 0,
-    studySessions: [],
-  });
+  const { user, loadingUser, isBanned, decks, notes, stats, updateDecks, updateStats, deleteDeck, addNote, deleteNote } = useFirebaseData();
 
   // Navigation states
-  const [activeTab, setActiveTab] = useState<"library" | "ai-builder" | "manual-builder" | "analytics" | "tutor">("library");
+  const [activeTab, setActiveTab] = useState<"library" | "ai-builder" | "manual-builder" | "analytics" | "tutor" | "notes" | "admin">("library");
   const [tutorDeckId, setTutorDeckId] = useState<string | null>(null);
   
   // Session states
@@ -45,73 +45,21 @@ export default function App() {
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Synchronous Load from LocalStorage with robust validation
-  useEffect(() => {
-    const cachedDecks = safeStorage.getItem("ai_flashcards_decks");
-    if (cachedDecks) {
-      try {
-        const parsed = JSON.parse(cachedDecks);
-        if (Array.isArray(parsed)) {
-          // Robustly clean and ensure only valid decks are set
-          const validated = parsed.filter(
-            (d) => d && typeof d === "object" && typeof d.name === "string" && Array.isArray(d.cards)
-          );
-          setDecks(validated);
-        } else {
-          setDecks(TEMPLATE_DECKS);
-        }
-      } catch (e) {
-        setDecks(TEMPLATE_DECKS);
-      }
-    } else {
-      setDecks(TEMPLATE_DECKS);
-    }
+  // Synchronous Load from LocalStorage with robust validation removed in favor of Firebase
 
-    const cachedStats = safeStorage.getItem("ai_flashcards_stats");
-    const defaultStats: UserStats = {
-      streak: 0,
-      lastStudyDate: undefined,
-      totalCardsViewed: 0,
-      totalCardsMastered: 0,
-      studySessions: [],
-    };
-    if (cachedStats) {
-      try {
-        const parsed = JSON.parse(cachedStats);
-        if (parsed && typeof parsed === "object") {
-          setStats({
-            streak: typeof parsed.streak === "number" ? parsed.streak : 0,
-            lastStudyDate: parsed.lastStudyDate || undefined,
-            totalCardsViewed: typeof parsed.totalCardsViewed === "number" ? parsed.totalCardsViewed : 0,
-            totalCardsMastered: typeof parsed.totalCardsMastered === "number" ? parsed.totalCardsMastered : 0,
-            studySessions: Array.isArray(parsed.studySessions) ? parsed.studySessions : [],
-          });
-        } else {
-          setStats(defaultStats);
-        }
-      } catch (e) {
-        setStats(defaultStats);
-      }
-    } else {
-      setStats(defaultStats);
-    }
-  }, []);
-
-  // Save changes to safeStorage
+  // Save changes to Firebase
   const saveDecks = (updatedDecks: Deck[]) => {
-    setDecks(updatedDecks);
-    safeStorage.setItem("ai_flashcards_decks", JSON.stringify(updatedDecks));
+    updateDecks(updatedDecks);
   };
 
   const saveStats = (updatedStats: UserStats) => {
-    setStats(updatedStats);
-    safeStorage.setItem("ai_flashcards_stats", JSON.stringify(updatedStats));
+    updateStats(updatedStats);
   };
 
   // Create a brand new empty deck or template deck
   const handleDeckCreated = (name: string, description: string, rawCards: any[]) => {
     const formattedCards: Flashcard[] = rawCards.map((c, index) => ({
-      id: `card-${Date.now()}-${index}-${Math.random()}`,
+      id: `card-${Date.now()}-${index}-${Math.random().toString(36).substring(2)}`,
       front: c.front,
       back: c.back,
       hint: c.hint,
@@ -137,7 +85,7 @@ export default function App() {
   // Add cards manually or via AI to an existing deck
   const handleAddCardsToDeck = (deckId: string, rawCards: any[]) => {
     const formattedCards: Flashcard[] = rawCards.map((c, index) => ({
-      id: `card-${Date.now()}-${index}-${Math.random()}`,
+      id: `card-${Date.now()}-${index}-${Math.random().toString(36).substring(2)}`,
       front: c.front,
       back: c.back,
       hint: c.hint,
@@ -306,11 +254,10 @@ export default function App() {
   };
 
   // Deleting a study deck
-  const handleDeleteDeck = (deckId: string, e: React.MouseEvent) => {
+  const handleDeleteDeck = async (deckId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (window.confirm("Are you sure you want to delete this deck? This action cannot be undone.")) {
-      const filtered = decks.filter((d) => d.id !== deckId);
-      saveDecks(filtered);
+      await deleteDeck(deckId);
       if (inspectingDeckId === deckId) setInspectingDeckId(null);
     }
   };
@@ -388,6 +335,22 @@ export default function App() {
 
   const inspectedDeck = decks.find((d) => d.id === inspectingDeckId);
 
+  if (loadingUser) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-bold">Loading...</div>;
+  if (!user) return <Auth onSignedIn={() => {}} />;
+  if (isBanned) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-900">
+      <Shield className="w-16 h-16 text-red-500 mb-4" />
+      <h1 className="text-3xl mb-2 font-display font-bold">Account Suspended</h1>
+      <p className="text-slate-500 mb-8">Your account has been banned by an administrator.</p>
+      <button 
+        onClick={() => auth.signOut()}
+        className="px-6 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-colors"
+      >
+        Sign Out
+      </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-900 flex flex-col font-sans" id="application-root">
       
@@ -454,11 +417,14 @@ export default function App() {
       {sessionMode === "idle" && (
         <div className="border-b border-slate-100 bg-white/70 backdrop-blur-md sticky top-[73px] z-30 px-4 md:px-8">
           <nav className="max-w-7xl mx-auto flex gap-6 overflow-x-auto scrollbar-none py-1">
-            {(["library", "ai-builder", "manual-builder", "analytics", "tutor"] as const).map((tab) => {
+            {([...(["library", "notes", "ai-builder", "manual-builder", "analytics", "tutor"] as const), ...(user.email === 'admin@study.app' ? ["admin" as const] : [])]).map((tab) => {
               let label = "Study Library";
               let icon = <BookOpen className="w-4 h-4" />;
               
-              if (tab === "ai-builder") {
+              if (tab === "notes") {
+                label = "My Notes";
+                icon = <FileText className="w-4 h-4 text-indigo-500" />;
+              } else if (tab === "ai-builder") {
                 label = "AI Architect";
                 icon = <Sparkles className="w-4 h-4 text-amber-500" />;
               } else if (tab === "manual-builder") {
@@ -470,6 +436,9 @@ export default function App() {
               } else if (tab === "tutor") {
                 label = "AI Study Tutor";
                 icon = <GraduationCap className="w-4 h-4 text-indigo-500" />;
+              } else if (tab === "admin") {
+                label = "Admin";
+                icon = <Shield className="w-4 h-4 text-red-500" />;
               }
 
               return (
@@ -675,12 +644,29 @@ export default function App() {
                 </div>
               )}
 
+              {/* ADMIN VIEW */}
+              {activeTab === "admin" && (
+                <AdminView currentUserId={user.uid} />
+              )}
+
+              {/* NOTES VIEW */}
+              {activeTab === "notes" && (
+                <NotesView
+                  notes={notes}
+                  onDeleteNote={deleteNote}
+                />
+              )}
+
               {/* TAB 2: AI BUILDER COMPONENT */}
               {activeTab === "ai-builder" && (
                 <AIGenerator
                   onDeckGenerated={handleDeckCreated}
                   existingDecks={decks}
                   onAddCardsToDeck={handleAddCardsToDeck}
+                  onSaveNotes={(title, content) => {
+                    addNote(title, content);
+                    setActiveTab("notes");
+                  }}
                 />
               )}
 
@@ -700,6 +686,7 @@ export default function App() {
                   stats={stats}
                   decks={decks}
                   onStartSuggestedStudy={handleStartSuggested}
+                  onDeckGenerated={handleDeckCreated}
                 />
               )}
 

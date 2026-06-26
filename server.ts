@@ -336,6 +336,113 @@ async function startServer() {
     }
   });
 
+  app.post("/api/generate-notes", async (req: any, res) => {
+    try {
+      const ai = getGeminiClient();
+      const { topic, textContent, format } = req.body;
+      const prompt = `
+        You are an expert study assistant. Generate comprehensive, well-structured study notes based on the following:
+        Topic: ${topic || "Not provided"}
+        Reference Text: ${textContent || "None provided"}
+        
+        ${format === 'bullet_points' 
+          ? "The user specifically requested a highly condensed, bullet-point style format. Do not write long paragraphs; keep it strictly to nested bullet points."
+          : "The user specifically requested highly detailed, wordy notes. Write out concepts in full paragraphs and provide deep, rich context and explanations."
+        }
+        
+        Use markdown for formatting.
+      `;
+
+      const response = await generateContentWithRetry(ai, {
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+
+      res.json({ notes: response.text });
+    } catch (error: any) {
+      console.error("Notes generation error:", error);
+      res.status(500).json({ error: "Failed to generate notes." });
+    }
+  });
+
+  app.post("/api/generate-references", async (req: any, res) => {
+    try {
+      const ai = getGeminiClient();
+      const { topic, textContent } = req.body;
+      const prompt = `
+        You are an expert academic librarian. Generate a proper academic bibliography/reference list based on the following material or topic:
+        Topic: ${topic || "Not provided"}
+        Source Material: ${textContent || "None provided"}
+        
+        Identify the most likely relevant sources or format the provided text into formal academic citations (e.g., APA or Harvard style).
+        Include a brief annotation or summary of why each source is relevant.
+        Return the result formatted cleanly in Markdown.
+      `;
+
+      const response = await generateContentWithRetry(ai, {
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+
+      res.json({ references: response.text });
+    } catch (error: any) {
+      console.error("References generation error:", error);
+      res.status(500).json({ error: "Failed to generate bibliography." });
+    }
+  });
+
+  app.post("/api/generate-weakspot-deck", async (req: any, res) => {
+    try {
+      const ai = getGeminiClient();
+      const { unmasteredCards } = req.body;
+      if (!unmasteredCards || !unmasteredCards.length) {
+        return res.status(400).json({ error: "No weak spots identified." });
+      }
+
+      const prompt = `
+        The user is struggling with the following concepts:
+        ${unmasteredCards.map((c: any) => `- ${c.front}: ${c.back}`).join("\n")}
+        
+        Generate a new set of 10 targeted flashcards designed to help the user practice and master these specific weak spots.
+        Focus on deep understanding. Make the questions relevant to their weak spots.
+        Respond ONLY in valid JSON format:
+        {
+          "cards": [
+            {
+              "front": "Question/prompt",
+              "back": "Answer/explanation",
+              "hint": "Optional study hint",
+              "tags": ["Tag1"],
+              "difficulty": "medium"
+            }
+          ]
+        }
+      `;
+
+      const response = await generateContentWithRetry(ai, {
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        }
+      });
+
+      const text = response.text;
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        const jsonStr = text.replace(/^```json\n|```$/g, '').trim();
+        data = JSON.parse(jsonStr);
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error("Weakspot Generation Error:", error);
+      res.status(500).json({ error: "Failed to generate weakspot deck." });
+    }
+  });
+
   // Vite integration
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

@@ -13,9 +13,43 @@ interface AnalyticsProps {
   stats: UserStats;
   decks: Deck[];
   onStartSuggestedStudy: () => void;
+  onDeckGenerated: (name: string, description: string, cards: any[]) => void;
 }
 
-export default function Analytics({ stats, decks, onStartSuggestedStudy }: AnalyticsProps) {
+export default function Analytics({ stats, decks, onStartSuggestedStudy, onDeckGenerated }: AnalyticsProps) {
+  const [generatingWeakspots, setGeneratingWeakspots] = React.useState(false);
+  const [weakspotError, setWeakspotError] = React.useState<string | null>(null);
+
+  const handleGenerateWeakspots = async () => {
+    setGeneratingWeakspots(true);
+    setWeakspotError(null);
+    try {
+      const unmastered = decks.flatMap(d => d.cards).filter(c => !c.mastered);
+      if (unmastered.length === 0) {
+        throw new Error("You have no unmastered cards! Great job.");
+      }
+      
+      const response = await fetch("/api/generate-weakspot-deck", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unmasteredCards: unmastered.slice(0, 50) }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Failed to generate weakspot deck.");
+      }
+      if (!data.cards || !data.cards.length) {
+        throw new Error("AI returned empty deck.");
+      }
+
+      onDeckGenerated("Targeted Weak Spot Quiz", "A dynamically generated quiz focusing on areas you need improvement in.", data.cards);
+    } catch (e: any) {
+      setWeakspotError(e.message);
+    } finally {
+      setGeneratingWeakspots(false);
+    }
+  };
   // Compute totals
   const totalDecks = decks.length;
   const totalCards = decks.reduce((acc, d) => acc + d.cards.length, 0);
@@ -274,13 +308,24 @@ export default function Analytics({ stats, decks, onStartSuggestedStudy }: Analy
               </p>
             </div>
 
-            <button
-              onClick={onStartSuggestedStudy}
-              disabled={decks.length === 0}
-              className="w-full py-2.5 bg-white text-slate-950 disabled:opacity-50 text-xs font-bold rounded-xl flex items-center justify-center gap-1 hover:bg-slate-100 transition-colors shadow-xs cursor-pointer relative"
-            >
-              Study Recommended Deck
-            </button>
+            <div className="space-y-2 relative z-10">
+              <button
+                onClick={onStartSuggestedStudy}
+                disabled={decks.length === 0}
+                className="w-full py-2.5 bg-white text-slate-950 disabled:opacity-50 text-xs font-bold rounded-xl flex items-center justify-center gap-1 hover:bg-slate-100 transition-colors shadow-xs cursor-pointer"
+              >
+                Study Recommended Deck
+              </button>
+              
+              <button
+                onClick={handleGenerateWeakspots}
+                disabled={generatingWeakspots || decks.length === 0}
+                className="w-full py-2.5 bg-indigo-600 text-white disabled:opacity-50 text-xs font-bold rounded-xl flex items-center justify-center gap-1 hover:bg-indigo-500 transition-colors shadow-xs cursor-pointer"
+              >
+                {generatingWeakspots ? "Analyzing Weak Spots..." : "Generate Targeted Quiz"}
+              </button>
+              {weakspotError && <p className="text-red-400 text-[10px] text-center">{weakspotError}</p>}
+            </div>
           </div>
 
         </div>
