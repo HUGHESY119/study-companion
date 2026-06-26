@@ -400,6 +400,7 @@ export default function App() {
               >
                 <Upload className="w-4 h-4" />
               </button>
+              {/* Account Settings Toggle Button */}
               <button
                 onClick={() => setActiveTab("account")}
                 className={`p-2 hover:bg-slate-100 border rounded-xl transition-all ${activeTab === 'account' ? 'bg-slate-100 border-slate-300 text-slate-800' : 'border-slate-100 text-slate-500'}`}
