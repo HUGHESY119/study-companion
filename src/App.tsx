@@ -400,6 +400,13 @@ export default function App() {
               >
                 <Upload className="w-4 h-4" />
               </button>
+              <button
+                onClick={() => setActiveTab("account")}
+                className={`p-2 hover:bg-slate-100 border rounded-xl transition-all ${activeTab === 'account' ? 'bg-slate-100 border-slate-300 text-slate-800' : 'border-slate-100 text-slate-500'}`}
+                title="Account Settings"
+              >
+                <User className="w-4 h-4" />
+              </button>
               <input
                 type="file"
                 ref={fileInputRef}
@@ -417,7 +424,7 @@ export default function App() {
       {sessionMode === "idle" && (
         <div className="border-b border-slate-100 bg-white/70 backdrop-blur-md sticky top-[73px] z-30 px-4 md:px-8">
           <nav className="max-w-7xl mx-auto flex gap-6 overflow-x-auto scrollbar-none py-1">
-            {([...(["library", "notes", "ai-builder", "manual-builder", "analytics", "tutor", "account"] as const), ...(user.email === 'admin@study.app' ? ["admin" as const] : [])]).map((tab) => {
+            {([...(["library", "notes", "ai-builder", "manual-builder", "analytics", "tutor"] as const), ...(user.email === 'admin@study.app' ? ["admin" as const] : [])]).map((tab) => {
               let label = "Study Library";
               let icon = <BookOpen className="w-4 h-4" />;
               
@@ -439,9 +446,6 @@ export default function App() {
               } else if (tab === "admin") {
                 label = "Admin";
                 icon = <Shield className="w-4 h-4 text-red-500" />;
-              } else if (tab === "account") {
-                label = "Account";
-                icon = <User className="w-4 h-4 text-slate-500" />;
               }
 
               return (
